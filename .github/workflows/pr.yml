@@ -201,6 +201,8 @@ jobs:
     name: Smoke Tests Complete
     needs:
       [
+        changes,
+        package,
         smoke_tests,
         smoke_tests_migrate,
         smoke_tests_standalone,
