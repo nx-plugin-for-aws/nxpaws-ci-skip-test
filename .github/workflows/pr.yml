@@ -28,12 +28,13 @@ permissions:
   id-token: write
 
 jobs:
-  # The smoke tests exercise generated projects, which a change confined to the
-  # docs site cannot affect, so they are skipped for docs only changes. Skipped
-  # jobs report as successful, so required checks still pass.
+  # The smoke tests exercise generated projects, which a docs only change cannot
+  # affect, so they are skipped for one.
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       docs_only: ${{ steps.docs_only.outputs.docs-only }}
     steps:
@@ -209,6 +210,7 @@ jobs:
       ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Check smoke test results
         env:

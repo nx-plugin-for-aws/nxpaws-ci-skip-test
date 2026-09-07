@@ -28,11 +28,13 @@ permissions:
   id-token: write
 
 jobs:
-  # The smoke tests exercise generated projects, which a change confined to the
-  # docs site cannot affect, so they are skipped for docs only changes.
+  # The smoke tests exercise generated projects, which a docs only change cannot
+  # affect, so they are skipped for one.
   changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       docs_only: ${{ steps.docs_only.outputs.docs-only }}
     steps:
@@ -214,6 +216,7 @@ jobs:
       ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    permissions: {}
     steps:
       - name: Check smoke test results
         env:
@@ -232,6 +235,9 @@ jobs:
   release:
     name: Release
     needs: [package, build, unit_tests, smoke_tests_complete]
+    # A docs only push skips the smoke tests, and a skip propagates to every job
+    # downstream of it unless that job sets its own condition.
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     outputs:
       latest_commit: ${{ steps.git_remote.outputs.latest_commit }}
