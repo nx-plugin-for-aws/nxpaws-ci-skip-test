@@ -1,0 +1,39 @@
+name: Semantics
+on: workflow_dispatch
+jobs:
+  skipped_job:
+    name: A skipped
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo a
+  gate:
+    name: B gate
+    needs: [skipped_job]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    outputs:
+      val: ${{ steps.s.outputs.val }}
+    steps:
+      - id: s
+        run: echo "val=hello" >> "$GITHUB_OUTPUT"
+  default_if:
+    name: C default if
+    needs: [gate]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo c
+  output_if:
+    name: D if on gate output
+    needs: [gate]
+    if: ${{ needs.gate.outputs.val == 'hello' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo d
+  dump:
+    name: E dump needs
+    needs: [gate]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo '${{ toJSON(needs) }}'
