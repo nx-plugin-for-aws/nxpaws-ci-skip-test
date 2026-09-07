@@ -196,3 +196,31 @@ jobs:
     steps:
       - name: Stub
         run: echo "stub ${{ github.job }}"
+  smoke_tests_complete:
+    name: Smoke Tests Complete
+    needs:
+      [
+        smoke_tests,
+        smoke_tests_migrate,
+        smoke_tests_standalone,
+        smoke_tests_macos_standalone,
+        smoke_tests_windows,
+        smoke_tests_windows_standalone,
+      ]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check smoke test results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Smoke test results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success | skipped) ;;
+              *)
+                echo "::error::A smoke test job did not pass ($result)"
+                exit 1
+                ;;
+            esac
+          done

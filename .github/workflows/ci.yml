@@ -201,13 +201,10 @@ jobs:
     steps:
       - name: Stub
         run: echo "stub ${{ github.job }}"
-  release:
-    name: Release
+  smoke_tests_complete:
+    name: Smoke Tests Complete
     needs:
       [
-        package,
-        build,
-        unit_tests,
         smoke_tests,
         smoke_tests_migrate,
         smoke_tests_standalone,
@@ -215,10 +212,26 @@ jobs:
         smoke_tests_windows,
         smoke_tests_windows_standalone,
       ]
-    # A docs only push skips the smoke tests, and a job whose dependency is
-    # skipped is skipped too unless it opts out - so gate on failures instead,
-    # keeping the release and the docs deployment that follows it.
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check smoke test results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Smoke test results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success | skipped) ;;
+              *)
+                echo "::error::A smoke test job did not pass ($result)"
+                exit 1
+                ;;
+            esac
+          done
+  release:
+    name: Release
+    needs: [package, build, unit_tests, smoke_tests_complete]
     runs-on: ubuntu-latest
     outputs:
       latest_commit: ${{ steps.git_remote.outputs.latest_commit }}
