@@ -2,42 +2,22 @@ name: Semantics
 on: workflow_dispatch
 jobs:
   probe:
-    name: Z probe tooling
+    name: Z probe
     runs-on: ubuntu-latest
     steps:
-      - run: |
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: node runs typescript directly
+        env:
+          BASE_SHA: ${{ github.event.repository.id && '' }}
+        run: |
           echo "node: $(node --version)"
-          echo "npm: $(npm --version)"
-          echo "pnpm: $(command -v pnpm || echo MISSING)"
-          pnpm --version || true
-          echo "corepack: $(command -v corepack || echo MISSING)"
-  skipped_job:
-    name: A skipped
-    if: ${{ false }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo a
-  gate:
-    name: B gate
-    needs: [skipped_job]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    outputs:
-      val: ${{ steps.s.outputs.val }}
-    steps:
-      - id: s
-        run: echo "val=hello" >> "$GITHUB_OUTPUT"
-  success_if:
-    name: F success()
-    needs: [gate]
-    if: ${{ success() }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo f
-  success_and_output_if:
-    name: G success() plus output
-    needs: [gate]
-    if: ${{ success() && needs.gate.outputs.val == 'hello' }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo g
+          BASE_SHA=$(git rev-parse HEAD~1) HEAD_SHA=$(git rev-parse HEAD) node ./scripts/docs-only-change.ts
+          echo "exit=$?"
+      - name: timing - corepack pnpm dlx tsx
+        run: |
+          time (corepack pnpm dlx tsx --version) || echo "corepack pnpm dlx failed"
+      - name: timing - npx -y tsx
+        run: |
+          time (npx -y tsx --version) || echo "npx failed"
