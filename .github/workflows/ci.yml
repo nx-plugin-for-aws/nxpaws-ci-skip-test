@@ -236,10 +236,11 @@ jobs:
           done
   release:
     name: Release
-    needs: [package, build, unit_tests, smoke_tests_complete]
-    # A docs only push skips the smoke tests, and a skip propagates to every job
-    # downstream of it unless that job sets its own condition.
-    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    needs: [changes, package, build, unit_tests, smoke_tests_complete]
+    # A docs only change releases nothing. It also skips the smoke tests, and a
+    # skip propagates to every job downstream of it unless that job opts out with
+    # a status function of its own.
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     outputs:
       latest_commit: ${{ steps.git_remote.outputs.latest_commit }}
@@ -254,9 +255,11 @@ jobs:
   deploy_docs:
     name: Deploy Docs
     runs-on: ubuntu-latest
-    # !cancelled() for the same reason as the release job above.
-    if: ${{ !cancelled() && needs.release.result == 'success' && github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.release.outputs.latest_commit == github.sha }}
-    needs: [release]
+    # Deploys once everything the docs ride on is green. The release job holds the
+    # "still the tip of main" check, so that guard applies only when it ran - a
+    # docs only push skips it.
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && (needs.release.result == 'skipped' || needs.release.outputs.latest_commit == github.sha) }}
+    needs: [build, unit_tests, smoke_tests_complete, release]
     steps:
       - name: Stub
         run: echo "stub ${{ github.job }}"
