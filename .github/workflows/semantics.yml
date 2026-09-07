@@ -1,6 +1,16 @@
 name: Semantics
 on: workflow_dispatch
 jobs:
+  probe:
+    name: Z probe tooling
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "node: $(node --version)"
+          echo "npm: $(npm --version)"
+          echo "pnpm: $(command -v pnpm || echo MISSING)"
+          pnpm --version || true
+          echo "corepack: $(command -v corepack || echo MISSING)"
   skipped_job:
     name: A skipped
     if: ${{ false }}
@@ -17,23 +27,17 @@ jobs:
     steps:
       - id: s
         run: echo "val=hello" >> "$GITHUB_OUTPUT"
-  default_if:
-    name: C default if
+  success_if:
+    name: F success()
     needs: [gate]
+    if: ${{ success() }}
     runs-on: ubuntu-latest
     steps:
-      - run: echo c
-  output_if:
-    name: D if on gate output
+      - run: echo f
+  success_and_output_if:
+    name: G success() plus output
     needs: [gate]
-    if: ${{ needs.gate.outputs.val == 'hello' }}
+    if: ${{ success() && needs.gate.outputs.val == 'hello' }}
     runs-on: ubuntu-latest
     steps:
-      - run: echo d
-  dump:
-    name: E dump needs
-    needs: [gate]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo '${{ toJSON(needs) }}'
+      - run: echo g
