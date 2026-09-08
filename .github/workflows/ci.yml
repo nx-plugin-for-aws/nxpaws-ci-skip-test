@@ -28,27 +28,6 @@ permissions:
   id-token: write
 
 jobs:
-  # The smoke tests exercise generated projects, which a docs only change cannot
-  # affect, so they are skipped for one.
-  changes:
-    name: Detect Changes
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      docs_only: ${{ steps.docs_only.outputs.docs-only }}
-      skip_release: ${{ steps.should_skip_release.outputs.skip_release }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-      - id: docs_only
-        uses: ./.github/actions/docs-only-change
-      # Read here rather than in the release job, which needs the answer to
-      # decide whether to run at all.
-      - name: Should skip release
-        id: should_skip_release
-        run: echo "skip_release=$(git log $(git describe --tags --abbrev=0)..HEAD --oneline | grep -qE 'feat\(?.*\)?:|fix\(?.*\)?:|revert\(?.*\)?:|perf\(?.*\)?:|deps\(?.*\)?:' && echo false || echo true)" >> $GITHUB_OUTPUT
   package:
     name: Package
     runs-on: ubuntu-latest
@@ -74,8 +53,7 @@ jobs:
   smoke_tests:
     name: Smoke Tests - ${{matrix.smoke_test}}
     runs-on: ubuntu-latest
-    needs: [changes, package]
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: package
     strategy:
       fail-fast: false
       matrix:
@@ -150,8 +128,7 @@ jobs:
   smoke_tests_migrate:
     name: Smoke Tests - migrate (${{matrix.shard}}/5)
     runs-on: ubuntu-latest
-    needs: [changes, package]
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: package
     strategy:
       fail-fast: false
       matrix:
@@ -162,8 +139,7 @@ jobs:
   smoke_tests_standalone:
     name: Smoke Tests - standalone (${{matrix.shard}}/6)
     runs-on: ubuntu-latest
-    needs: [changes, package]
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: package
     strategy:
       fail-fast: false
       matrix:
@@ -174,8 +150,7 @@ jobs:
   smoke_tests_macos_standalone:
     name: macOS Smoke Tests - standalone (${{matrix.shard}}/6)
     runs-on: ubuntu-latest
-    needs: [changes, package]
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: package
     strategy:
       fail-fast: false
       matrix:
@@ -186,8 +161,7 @@ jobs:
   smoke_tests_windows:
     name: Windows Smoke Tests - ${{matrix.smoke_test}}
     runs-on: ubuntu-latest
-    needs: [changes, package]
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: package
     strategy:
       fail-fast: false
       matrix:
@@ -200,8 +174,7 @@ jobs:
   smoke_tests_windows_standalone:
     name: Windows Smoke Tests - standalone (${{matrix.shard}}/6)
     runs-on: ubuntu-latest
-    needs: [changes, package]
-    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    needs: package
     strategy:
       fail-fast: false
       matrix:
@@ -209,12 +182,13 @@ jobs:
     steps:
       - name: Stub
         run: echo "stub ${{ github.job }}"
-  smoke_tests_complete:
-    name: Smoke Tests Complete
+  release:
+    name: Release
     needs:
       [
-        changes,
         package,
+        build,
+        unit_tests,
         smoke_tests,
         smoke_tests_migrate,
         smoke_tests_standalone,
@@ -222,62 +196,10 @@ jobs:
         smoke_tests_windows,
         smoke_tests_windows_standalone,
       ]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-      - name: Check smoke test results
-        env:
-          RESULTS: ${{ join(needs.*.result, ' ') }}
-        run: |
-          echo "Smoke test results: $RESULTS"
-          for result in $RESULTS; do
-            case "$result" in
-              success | skipped) ;;
-              *)
-                echo "::error::A smoke test job did not pass ($result)"
-                exit 1
-                ;;
-            esac
-          done
-  # Records this commit as validated so the next push knows what it may skip -
-  # see scripts/docs-only-change.mts. A cancelled or failed run leaves the ref
-  # where it is, folding its commits into the next run's diff.
-  mark_validated:
-    name: Mark Validated
-    needs: [changes, package, build, unit_tests, smoke_tests_complete]
-    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-      - name: Move the last validated ref
-        env:
-          REF: refs/ci/last-validated
-        run: |
-          current=$(git ls-remote origin "$REF" | cut -f1)
-          # Only ever forwards, so a run finishing out of order cannot rewind it
-          # onto a commit whose successors are unvalidated.
-          if [ -n "$current" ] && ! git merge-base --is-ancestor "$current" HEAD; then
-            echo "$REF is at $current, which this commit does not descend from - leaving it"
-            exit 0
-          fi
-          git push origin "HEAD:$REF"
-  release:
-    name: Release
-    needs: [changes, package, build, unit_tests, smoke_tests_complete]
-    # A docs only change releases nothing of its own, but it still has to publish
-    # anything an earlier run left unreleased - a run whose release was skipped
-    # because the branch had moved on, say. It also skips the smoke tests, and a
-    # skip propagates to every job downstream of it unless that job opts out with
-    # a status function of its own.
-    if: ${{ !cancelled() && (needs.changes.outputs.docs_only != 'true' || needs.changes.outputs.skip_release != 'true') && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     outputs:
       latest_commit: ${{ steps.git_remote.outputs.latest_commit }}
+      skip_release: ${{ steps.should_skip_release.outputs.skip_release }}
     steps:
       - id: git_remote
         run: echo "latest_commit=${{ github.sha }}" >> "$GITHUB_OUTPUT"
@@ -288,11 +210,8 @@ jobs:
   deploy_docs:
     name: Deploy Docs
     runs-on: ubuntu-latest
-    # Deploys once everything the docs ride on is green. The release job holds the
-    # "still the tip of main" check, so that guard applies only when it ran - a
-    # docs only push skips it.
-    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && (needs.release.result == 'skipped' || needs.release.outputs.latest_commit == github.sha) }}
-    needs: [build, unit_tests, smoke_tests_complete, release]
+    if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.release.outputs.latest_commit == github.sha }}
+    needs: [release]
     steps:
       - name: Stub
         run: echo "stub ${{ github.job }}"
